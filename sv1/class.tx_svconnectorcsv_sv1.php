@@ -116,12 +116,11 @@ class tx_svconnectorcsv_sv1 extends tx_svconnector_base implements Tx_Svconnecto
 		if ($numResults > 0) {
 				// Handle header rows, if any
 			if (!empty($parameters['skip_rows'])) {
-
                 if ($this->hasCycleBehaviour($parameters) && $this->getCycle($parameters) === 1) {
                     for ($i = 0; $i < $parameters['skip_rows']; $i++) {
                         $headers = array_shift($result);
                     }
-                } else if ($this->hasCycleBehaviour($parameters) && $this->getCycle($parameters) > 1) {
+                } else if ($this->hasCycleBehaviour($parameters) && $this->getCycle($parameters) > 1 || $this->getCycle($parameters) === 0) {
                     $headerResult = $this->getHeaders($parameters);
                     for ($i = 0; $i < $parameters['skip_rows']; $i++) {
                         $headers = array_shift($headerResult);
