@@ -120,7 +120,7 @@ class tx_svconnectorcsv_sv1 extends tx_svconnector_base implements Tx_Svconnecto
                     for ($i = 0; $i < $parameters['skip_rows']; $i++) {
                         $headers = array_shift($result);
                     }
-                } else if ($this->hasCycleBehaviour($parameters) && $this->getCycle($parameters) > 1 || $this->getCycle($parameters) === 0) {
+                } else if ($this->hasCycleBehaviour($parameters) && $this->getCycle($parameters) > 1) {
                     $headerResult = $this->getHeaders($parameters);
                     for ($i = 0; $i < $parameters['skip_rows']; $i++) {
                         $headers = array_shift($headerResult);
@@ -209,13 +209,18 @@ class tx_svconnectorcsv_sv1 extends tx_svconnector_base implements Tx_Svconnecto
 				}
 
                 if ($this->hasCycleBehaviour($parameters)) {
-                    $tempFileName = pathinfo(basename($filename), PATHINFO_FILENAME)  . '-' . filemtime($filename) . '.txt';
+                    $tempFileName = $parameters['rows_per_cycle_filename'] != '' ? $parameters['rows_per_cycle_filename'] : pathinfo(basename($filename), PATHINFO_FILENAME)  . '-' . filemtime($filename) . '.txt';
                     $cycleInfo = (file_exists($this->tempPath . $tempFileName)) ? explode('#', file_get_contents($this->tempPath . $tempFileName)) : array(0 => 0, 1 => 0);
                     $cycle = intval($cycleInfo[0]);
                     $lastPosition = intval($cycleInfo[1]);
                     $index = 0;
                     $rowsPerCycle = $this->getRowsPerCycle($parameters);
                     fseek($fp, $lastPosition);
+                        // we are already at the end of the file
+                    if ($lastPosition == filesize($filename)) {
+                        unlink($this->tempPath . $tempFileName);
+                        return $fileData;
+                    }
                 }
 
 				while ($row = fgetcsv($fp, 0, $delimiter, $qualifier)) {
@@ -243,14 +248,11 @@ class tx_svconnectorcsv_sv1 extends tx_svconnector_base implements Tx_Svconnecto
 				}
 
                 if ($this->hasCycleBehaviour($parameters)) {
-                    $tempFileName = pathinfo(basename($filename), PATHINFO_FILENAME)  . '-' . filemtime($filename) . '.txt';
+                    $tempFileName = $parameters['rows_per_cycle_filename'] != '' ? $parameters['rows_per_cycle_filename'] : pathinfo(basename($filename), PATHINFO_FILENAME)  . '-' . filemtime($filename) . '.txt';
                     $cycle++;
                     $cycleInfo[0] = strval($cycle);
                     $cycleInfo[1] = strval(ftell($fp));
-                    file_put_contents($this->tempPath . $tempFileName, implode('#',$cycleInfo));
-                    if (feof($fp)) {
-                        unlink($this->tempPath . $tempFileName);
-                    }
+                    file_put_contents($this->tempPath . $tempFileName, implode('#', $cycleInfo));
                 }
 
 				fclose($fp);
@@ -408,7 +410,7 @@ class tx_svconnectorcsv_sv1 extends tx_svconnector_base implements Tx_Svconnecto
         $result = FALSE;
         if ($this->hasCycleBehaviour($parameters)) {
             $filename = t3lib_div::getFileAbsFileName($parameters['filename']);
-            $tempFileName = pathinfo(basename($filename), PATHINFO_FILENAME)  . '-' . filemtime($filename) . '.txt';
+            $tempFileName = $parameters['rows_per_cycle_filename'] != '' ? $parameters['rows_per_cycle_filename'] : pathinfo(basename($filename), PATHINFO_FILENAME)  . '-' . filemtime($filename) . '.txt';
             $cycleInfo = (file_exists($this->tempPath . $tempFileName)) ? explode('#', file_get_contents($this->tempPath . $tempFileName)) : array(0 => 0, 1 => 0);
             $result = intval($cycleInfo[0]);
         }
@@ -424,7 +426,7 @@ class tx_svconnectorcsv_sv1 extends tx_svconnector_base implements Tx_Svconnecto
         $result = FALSE;
         if ($this->hasCycleBehaviour($parameters)) {
             $filename = t3lib_div::getFileAbsFileName($parameters['filename']);
-            $tempFileName = pathinfo(basename($filename), PATHINFO_FILENAME) . '-' . filemtime($filename) . '.txt';
+            $tempFileName = $parameters['rows_per_cycle_filename'] != '' ? $parameters['rows_per_cycle_filename'] : pathinfo(basename($filename), PATHINFO_FILENAME)  . '-' . filemtime($filename) . '.txt';
             $cycleInfo = (file_exists($this->tempPath . $tempFileName)) ? explode('#', file_get_contents($this->tempPath . $tempFileName)) : array(0 => 0, 1 => 0);
             $result = round((intval($cycleInfo[1]) / filesize($filename)) * 100, 2);
         }
