@@ -209,7 +209,7 @@ class tx_svconnectorcsv_sv1 extends tx_svconnector_base implements Tx_Svconnecto
 				}
 
                 if ($this->hasCycleBehaviour($parameters)) {
-                    $tempFileName = $parameters['rows_per_cycle_filename'] != '' ? $parameters['rows_per_cycle_filename'] : pathinfo(basename($filename), PATHINFO_FILENAME)  . '-' . filemtime($filename) . '.txt';
+                    $tempFileName = $this->getTempFileName($parameters);
                     $cycleInfo = (file_exists($this->tempPath . $tempFileName)) ? explode('#', file_get_contents($this->tempPath . $tempFileName)) : array(0 => 0, 1 => 0);
                     $cycle = intval($cycleInfo[0]);
                     $lastPosition = intval($cycleInfo[1]);
@@ -248,7 +248,7 @@ class tx_svconnectorcsv_sv1 extends tx_svconnector_base implements Tx_Svconnecto
 				}
 
                 if ($this->hasCycleBehaviour($parameters)) {
-                    $tempFileName = $parameters['rows_per_cycle_filename'] != '' ? $parameters['rows_per_cycle_filename'] : pathinfo(basename($filename), PATHINFO_FILENAME)  . '-' . filemtime($filename) . '.txt';
+                    $tempFileName = $this->getTempFileName($parameters);
                     $cycle++;
                     $cycleInfo[0] = strval($cycle);
                     $cycleInfo[1] = strval(ftell($fp));
@@ -410,7 +410,7 @@ class tx_svconnectorcsv_sv1 extends tx_svconnector_base implements Tx_Svconnecto
         $result = FALSE;
         if ($this->hasCycleBehaviour($parameters)) {
             $filename = t3lib_div::getFileAbsFileName($parameters['filename']);
-            $tempFileName = $parameters['rows_per_cycle_filename'] != '' ? $parameters['rows_per_cycle_filename'] : pathinfo(basename($filename), PATHINFO_FILENAME)  . '-' . filemtime($filename) . '.txt';
+            $tempFileName = $this->getTempFileName($parameters);
             $cycleInfo = (file_exists($this->tempPath . $tempFileName)) ? explode('#', file_get_contents($this->tempPath . $tempFileName)) : array(0 => 0, 1 => 0);
             $result = intval($cycleInfo[0]);
         }
@@ -426,9 +426,19 @@ class tx_svconnectorcsv_sv1 extends tx_svconnector_base implements Tx_Svconnecto
         $result = FALSE;
         if ($this->hasCycleBehaviour($parameters)) {
             $filename = t3lib_div::getFileAbsFileName($parameters['filename']);
-            $tempFileName = $parameters['rows_per_cycle_filename'] != '' ? $parameters['rows_per_cycle_filename'] : pathinfo(basename($filename), PATHINFO_FILENAME)  . '-' . filemtime($filename) . '.txt';
+            $tempFileName = $this->getTempFileName($parameters);
             $cycleInfo = (file_exists($this->tempPath . $tempFileName)) ? explode('#', file_get_contents($this->tempPath . $tempFileName)) : array(0 => 0, 1 => 0);
             $result = round((intval($cycleInfo[1]) / filesize($filename)) * 100, 2);
+        }
+        return $result;
+    }
+
+
+    private function getTempFileName($parameters){
+        $result = '';
+        if ($this->hasCycleBehaviour($parameters)) {
+            $filename = t3lib_div::getFileAbsFileName($parameters['filename']);
+            $result = $parameters['rows_per_cycle_identifier'] != '' ? $parameters['rows_per_cycle_identifier'] . '-' . filemtime($filename) . '.txt' : pathinfo(basename($filename), PATHINFO_FILENAME)  . '-' . filemtime($filename) . '.txt';
         }
         return $result;
     }
