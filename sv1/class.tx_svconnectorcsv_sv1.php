@@ -426,9 +426,13 @@ class tx_svconnectorcsv_sv1 extends tx_svconnector_base implements Tx_Svconnecto
         $result = FALSE;
         if ($this->hasCycleBehaviour($parameters)) {
             $filename = t3lib_div::getFileAbsFileName($parameters['filename']);
-            $tempFileName = $this->getTempFileName($parameters);
-            $cycleInfo = (file_exists($this->tempPath . $tempFileName)) ? explode('#', file_get_contents($this->tempPath . $tempFileName)) : array(0 => 0, 1 => 0);
-            $result = round((intval($cycleInfo[1]) / filesize($filename)) * 100, 2);
+            if (file_exists($filename)) {
+                $tempFileName = $this->getTempFileName($parameters);
+                $cycleInfo = (file_exists($this->tempPath . $tempFileName)) ? explode('#', file_get_contents($this->tempPath . $tempFileName)) : array(0 => 0, 1 => 0);
+                $result = round((intval($cycleInfo[1]) / filesize($filename)) * 100, 2);
+            } else {
+                $result = 100.00;
+            }
         }
         return $result;
     }
