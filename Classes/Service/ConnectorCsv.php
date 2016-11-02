@@ -16,6 +16,7 @@ namespace Cobweb\SvconnectorCsv\Service;
 
 use Cobweb\Svconnector\Exception\SourceErrorException;
 use Cobweb\Svconnector\Service\ConnectorBase;
+use TYPO3\CMS\Backend\Form\Exception;
 use TYPO3\CMS\Core\Utility\GeneralUtility;
 
 /**
@@ -33,6 +34,11 @@ class ConnectorCsv extends ConnectorBase
     protected $extConf; // Extension configuration
 
     /**
+     * @var string
+     */
+    protected $tempPath;
+
+    /**
      * Verifies that the connection is functional
      * In the case of CSV, it is always the case
      * It might fail for a specific file, but it is always available in general
@@ -43,6 +49,11 @@ class ConnectorCsv extends ConnectorBase
     {
         parent::init();
         $this->extConf = unserialize($GLOBALS['TYPO3_CONF_VARS']['EXT']['extConf'][$this->extKey]);
+
+        $this->tempPath = PATH_site . 'typo3temp/external_import/';
+        if (!file_exists($this->tempPath)) {
+            mkdir($this->tempPath, 0775, TRUE);
+        }
         return true;
     }
 
@@ -108,9 +119,22 @@ class ConnectorCsv extends ConnectorBase
         if ($numResults > 0) {
             // Handle header rows, if any
             if (!empty($parameters['skip_rows'])) {
-                for ($i = 0; $i < $parameters['skip_rows']; $i++) {
-                    $headers = array_shift($result);
+
+                if ($this->hasCycleBehaviour($parameters) && $this->getCycle($parameters) === 1) {
+                    for ($i = 0; $i < $parameters['skip_rows']; $i++) {
+                        $headers = array_shift($result);
+                    }
+                } else if ($this->hasCycleBehaviour($parameters) && $this->getCycle($parameters) > 1) {
+                    $headerResult = $this->getHeaders($parameters);
+                    for ($i = 0; $i < $parameters['skip_rows']; $i++) {
+                        $headers = array_shift($headerResult);
+                    }
+                } else if (!$this->hasCycleBehaviour($parameters)) {
+                    for ($i = 0; $i < $parameters['skip_rows']; $i++) {
+                        $headers = array_shift($result);
+                    }
                 }
+
             }
             foreach ($result as $row) {
                 $rowData = array();
@@ -152,6 +176,9 @@ class ConnectorCsv extends ConnectorBase
      */
     protected function query($parameters)
     {
+        $index = 0;
+        $rowsPerCycle = 0;
+        $cycle = 0;
         $fileData = array();
         if (TYPO3_DLOG || $this->extConf['debug']) {
             GeneralUtility::devLog('Call parameters', $this->extKey, -1, $parameters);
@@ -163,8 +190,8 @@ class ConnectorCsv extends ConnectorBase
                 GeneralUtility::devLog($message, $this->extKey, 3);
             }
             throw new SourceErrorException(
-                    $message,
-                    1299358179
+                $message,
+                1299358179
             );
         } else {
             $filename = GeneralUtility::getFileAbsFileName($parameters['filename']);
@@ -194,6 +221,22 @@ class ConnectorCsv extends ConnectorBase
                     setlocale(LC_ALL, $parameters['locale']);
                 }
 
+                if ($this->hasCycleBehaviour($parameters)) {
+                    $tempFileName = $this->getTempFileName($parameters);
+                    $cycle++;
+                    $cycleInfo = (file_exists($this->tempPath . $tempFileName)) ? explode('#', file_get_contents($this->tempPath . $tempFileName)) : array(0 => 0, 1 => 0);
+                    $cycle = intval($cycleInfo[0]);
+                    $lastPosition = intval($cycleInfo[1]);
+                    $index = 0;
+                    $rowsPerCycle = $this->getRowsPerCycle($parameters);
+                    fseek($fp, $lastPosition);
+                    // we are already at the end of the file
+                    if ($lastPosition == filesize($filename)) {
+                        unlink($this->tempPath . $tempFileName);
+                        return $fileData;
+                    }
+                }
+
                 $isFirstRow = true;
                 while ($row = fgetcsv($fp, 0, $delimiter, $qualifier)) {
                     // In the first row, remove UTF-8 Byte Order Mark if applicable
@@ -216,7 +259,23 @@ class ConnectorCsv extends ConnectorBase
                         }
                     }
                     $fileData[] = $row;
+
+                    if ($this->hasCycleBehaviour($parameters)) {
+                        $index++;
+                        if ($index >= $rowsPerCycle) {
+                            break;
+                        }
+                    }
                 }
+
+                if ($this->hasCycleBehaviour($parameters)) {
+                    $tempFileName = $this->getTempFileName($parameters);
+                    $cycle++;
+                    $cycleInfo[0] = strval($cycle);
+                    $cycleInfo[1] = strval(ftell($fp));
+                    file_put_contents($this->tempPath . $tempFileName, implode('#', $cycleInfo));
+                }
+
                 fclose($fp);
                 if (TYPO3_DLOG || $this->extConf['debug']) {
                     GeneralUtility::devLog('Data from file', $this->extKey, -1, $fileData);
@@ -230,15 +289,15 @@ class ConnectorCsv extends ConnectorBase
                 // Error: file does not exist
             } else {
                 $message = sprintf(
-                        $this->sL('LLL:EXT:' . $this->extKey . '/Resources/Private/Language/locallang.xlf:file_not_found'),
-                        $parameters['filename']
+                    $this->sL('LLL:EXT:' . $this->extKey . '/Resources/Private/Language/locallang.xlf:file_not_found'),
+                    $parameters['filename']
                 );
                 if (TYPO3_DLOG || $this->extConf['debug']) {
                     GeneralUtility::devLog($message, $this->extKey, 3);
                 }
                 throw new SourceErrorException(
-                        $message,
-                        1299358355
+                    $message,
+                    1299358355
                 );
             }
         }
@@ -251,5 +310,162 @@ class ConnectorCsv extends ConnectorBase
         }
         // Return the result
         return $fileData;
+    }
+
+
+    /**
+     * @return array
+     */
+    protected function getHeaders($parameters)
+    {
+        $fileData = array();
+        $encoding = 0;
+        if (TYPO3_DLOG || $this->extConf['debug']) {
+            GeneralUtility::devLog('Call parameters', $this->extKey, -1, $parameters);
+        }
+        // Check if the file is defined and exists
+        if (empty($parameters['filename'])) {
+            $message = $this->sL('LLL:EXT:' . $this->extKey . '/sv1/locallang.xml:no_file_defined');
+            if (TYPO3_DLOG || $this->extConf['debug']) {
+                GeneralUtility::devLog($message, $this->extKey, 3);
+            }
+            throw new Exception($message, 1299358179);
+        } else {
+            $filename = GeneralUtility::getFileAbsFileName($parameters['filename']);
+            if (file_exists($filename)) {
+                // Force auto-detection of line endings
+                ini_set('auto_detect_line_endings', TRUE);
+                // Check if the current (BE) charset is the same as the file encoding
+                if (empty($parameters['encoding'])) {
+                    $isSameCharset = TRUE;
+                } else {
+                    $encoding = $this->getCharsetConverter()->parse_charset($parameters['encoding']);
+                    $isSameCharset = $this->getCharset() == $encoding;
+                }
+                // Open the file and read it line by line, already interpreted as CSV data
+                $fp = fopen($filename, 'r');
+                $delimiter = (empty($parameters['delimiter'])) ? ',' : $parameters['delimiter'];
+                $qualifier = (empty($parameters['text_qualifier'])) ? '"' : $parameters['text_qualifier'];
+                // Set locale, if specific locale is defined
+                $oldLocale = '';
+                if (!empty($parameters['locale'])) {
+                    // Get the old locale first, in order to restore it later
+                    $oldLocale = setlocale(LC_ALL, 0);
+                    setlocale(LC_ALL, $parameters['locale']);
+                }
+                $skipRows = $parameters['skip_rows'];
+                $index = 0;
+                while ($row = fgetcsv($fp, 0, $delimiter, $qualifier)) {
+                    $numData = count($row);
+                    // If the row is an array with a single NULL entry, it corresponds to a blank line
+                    // and we want to skip it (see note in http://php.net/manual/en/function.fgetcsv.php#refsect1-function.fgetcsv-returnvalues)
+                    if ($numData === 1 && current($row) === NULL) {
+                        continue;
+                    }
+                    // If the charset of the file is not the same as the BE charset,
+                    // convert every input to the proper charset
+                    if (!$isSameCharset) {
+                        for ($i = 0; $i < $numData; $i++) {
+                            $row[$i] = $this->getCharsetConverter()->conv($row[$i], $encoding, $this->getCharset());
+                        }
+                    }
+                    $fileData[] = $row;
+                    $index++;
+                    if ($index >= $skipRows) {
+                        break;
+                    }
+                }
+                fclose($fp);
+                if (TYPO3_DLOG || $this->extConf['debug']) {
+                    GeneralUtility::devLog('Data from file', $this->extKey, -1, $fileData);
+                }
+                // Reset locale, if necessary
+                if (!empty($oldLocale)) {
+                    setlocale(LC_ALL, $oldLocale);
+                }
+                // Error: file does not exist
+            } else {
+                $message = sprintf(
+                    $this->sL('LLL:EXT:' . $this->extKey . '/sv1/locallang.xml:file_not_found'),
+                    $filename
+                );
+                if (TYPO3_DLOG || $this->extConf['debug']) {
+                    GeneralUtility::devLog($message, $this->extKey, 3);
+                }
+                throw new Exception($message, 1299358355);
+            }
+        }
+        // Return the result
+        return $fileData;
+    }
+
+    /**
+     * Is a cycle behaviour defined
+     *
+     * @param array $parameters
+     * @return int|boolean TRUE if the a cycle behaviour is configured within TCA otherwise FALSE
+     */
+    public function hasCycleBehaviour($parameters)
+    {
+        return isset($parameters['rows_per_cycle']) ? TRUE : FALSE;
+    }
+
+    /**
+     * Gets the rows per cycle
+     *
+     * @param array $parameters
+     * @return int|boolean number rows per cycle or FALSE if no cycle behaviour was specified
+     */
+    public function getRowsPerCycle($parameters)
+    {
+        return isset($parameters['rows_per_cycle']) ? intval($parameters['rows_per_cycle']) : FALSE;
+    }
+
+    /**
+     * Gets the current iteration cycle
+     *
+     * @param array $parameters
+     * @return int|boolean Current cycle of the iteration or FALSE if no cycle behaviour was specified
+     */
+    public function getCycle($parameters)
+    {
+        $result = FALSE;
+        if ($this->hasCycleBehaviour($parameters)) {
+            $tempFileName = $this->getTempFileName($parameters);
+            $cycleInfo = (file_exists($this->tempPath . $tempFileName)) ? explode('#', file_get_contents($this->tempPath . $tempFileName)) : array(0 => 0, 1 => 0);
+            $result = intval($cycleInfo[0]);
+        }
+        return $result;
+    }
+
+    /**
+     * Gets the progress of a service.
+     *
+     * @return float|boolean Progress of the service as a two decimal precision float. f.e. 44.87 or FALSE if no cycle behaviour was specified
+     */
+    public function getProgress($parameters)
+    {
+        $result = FALSE;
+        if ($this->hasCycleBehaviour($parameters)) {
+            $filename = GeneralUtility::getFileAbsFileName($parameters['filename']);
+            if (file_exists($filename)) {
+                $tempFileName = $this->getTempFileName($parameters);
+                $cycleInfo = (file_exists($this->tempPath . $tempFileName)) ? explode('#', file_get_contents($this->tempPath . $tempFileName)) : array(0 => 0, 1 => 0);
+                $result = round((intval($cycleInfo[1]) / filesize($filename)) * 100, 2);
+            } else {
+                $result = 100.00;
+            }
+        }
+        return $result;
+    }
+
+    private function getTempFileName($parameters)
+    {
+        $result = '';
+        if ($this->hasCycleBehaviour($parameters)) {
+            $filename = GeneralUtility::getFileAbsFileName($parameters['filename']);
+            $result = $parameters['rows_per_cycle_identifier'] != '' ? $parameters['rows_per_cycle_identifier'] . '-' . filemtime($filename) . '.txt' : pathinfo(basename($filename), PATHINFO_FILENAME) . '-' . filemtime($filename) . '.txt';
+        }
+        return $result;
     }
 }
