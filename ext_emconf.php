@@ -12,20 +12,20 @@ $EM_CONF[$_EXTKEY] = array (
   'title' => 'Connector service - CSV',
   'description' => 'Connector service for reading a CSV or similar flat file',
   'category' => 'services',
-  'author' => 'Francois Suter (Cobweb), Andre Wuttig, Axel Boeswetter',
-  'author_email' => 'typo3@cobweb.ch, wuttig@portrino.de, boeswetter@portrino.de',
+  'author' => 'Francois Suter (Cobweb)',
+  'author_email' => 'typo3@cobweb.ch',
   'state' => 'stable',
   'uploadfolder' => 0,
   'createDirs' => '',
   'clearCacheOnLoad' => 1,
-  'author_company' => 'Cobweb, portrino GmbH, portrino GmbH',
-  'version' => '1.6.0',
+  'author_company' => '',
+  'version' => '1.5.2',
   'constraints' => 
   array (
     'depends' => 
     array (
       'typo3' => '4.5.0-6.2.99',
-      'svconnector' => '2.5.0-0.0.0',
+      'svconnector' => '2.4.0-0.0.0',
     ),
     'conflicts' => 
     array (
