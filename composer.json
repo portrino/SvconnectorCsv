@@ -1,5 +1,5 @@
 {
-	"name": "cobweb/svconnector_csv",
+	"name": "portrino/svconnector_csv",
 	"type": "typo3-cms-extension",
 	"description": "Connector service for reading a CSV or similar flat file",
 	"license": [
@@ -16,7 +16,7 @@
 			"Cobweb\\SvconnectorCsv\\": "Classes/"
 		}
 	},
-	"version": "2.0.0",
+	"version": "2.0.1",
 	"require": {
 		"typo3/cms-core": ">=7.6.0,<8.0",
 		"cobweb/svconnector": ">=3.0.0"
